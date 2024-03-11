@@ -1,0 +1,29 @@
+body {
+	background: #3ac2bb;
+	font-family: Poppins, Arial, Helvetica, sans-serif;
+}
+h1 {
+	text-align: center;
+}
+
+.assign {
+	display: flex;
+    align-items: center;
+    gap: 10px;
+	padding: 10px;
+	margin: 20px;
+	background: #DEF2F1;
+    border-radius: 20px;
+}
+
+.assign img {
+    flex-grow: 1;
+	width: 600px;
+    height: 100%;
+	padding: 10px;
+    border-radius: 20px;
+}
+
+.assign h2 {
+    text-align: center;
+}
