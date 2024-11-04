@@ -152,7 +152,7 @@ function filterEvents(events) {
   return filteredEvents
 }
 
-let controller = new AbortController();
+let gameFilterController = new AbortController();
 
 async function populateIndividualGameFilters(eventData, periods, teamAbbrev) {
   const playerDropdown = document.getElementById("playerFilter");
@@ -163,8 +163,8 @@ async function populateIndividualGameFilters(eventData, periods, teamAbbrev) {
   playerDropdown.innerHTML = '<option value="">All Players</option>';
 
   // Cancel previous change listeners
-  controller.abort();
-  controller = new AbortController();
+  gameFilterController.abort();
+  gameFilterController = new AbortController();
 
   for (let period = 1; period <= periods; period++) {
     const option = document.createElement("option");
@@ -207,13 +207,13 @@ async function populateIndividualGameFilters(eventData, periods, teamAbbrev) {
     const filteredEvents = filterEvents(eventData);
     // TODO: maybe update the periods filter?
     plotGameData(filteredEvents);
-  }, { signal: controller.signal });
+  }, { signal: gameFilterController.signal });
 
   periodDropdown.addEventListener("change", () => {
     const filteredEvents = filterEvents(eventData);
     // TODO: maybe update the player filter?
     plotGameData(filteredEvents);
-  }, { signal: controller.signal });
+  }, { signal: gameFilterController.signal });
 }
 
 // Fetch game data and update D3 plot
@@ -224,6 +224,8 @@ function handleGameSelect(gameId, homeTeamAbbrev) {
   populateIndividualGameFilters(gameData.events, gameData.periods, homeTeamAbbrev);
   plotGameData(gameData.events);
 }
+
+let seasonFiltersController = new AbortController();
 
 function handleSeasonTeamSelect() {
   const selectedTeam = document.getElementById("season-team-select").value;
@@ -247,8 +249,8 @@ function handleSeasonTeamSelect() {
   }
 
   // Cancel previous change listeners
-  controller.abort();
-  controller = new AbortController();
+  seasonFiltersController.abort();
+  seasonFiltersController = new AbortController();
 
   goalsButton.addEventListener("click", () => {
     if (!goalsButton.classList.contains("active")) {
@@ -257,7 +259,7 @@ function handleSeasonTeamSelect() {
       shotsButton.classList.remove("active");
       plotSeasonData(goalEvents)
     }
-  }, { signal: controller.signal })
+  }, { signal: seasonFiltersController.signal })
   shotsButton.addEventListener("click", () => {
     if (!shotsButton.classList.contains("active")) {
       document.getElementById("season-header").innerHTML = selectedTeam ? `${teamMap[selectedTeam].name} Shots` : "Entire League Shots"
@@ -265,7 +267,7 @@ function handleSeasonTeamSelect() {
       shotsButton.classList.add("active");
       plotSeasonData(shotEvents)
     }
-  }, { signal: controller.signal })
+  }, { signal: seasonFiltersController.signal })
 
   const playerSelect = document.getElementById("season-player-select");
   playerSelect.innerHTML = '<option value="">All Players</option>';
