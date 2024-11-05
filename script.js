@@ -5,7 +5,6 @@ const gameMap = {};
 window.addEventListener('DOMContentLoaded', async function () {
   // Create the initial empty plots once the DOM loads
   plotGameData([])
-  plotSeasonData([])
 
   // Setup tab switching
   document.getElementById("game-tab").addEventListener("click", () => { switchTab("game") });
@@ -229,7 +228,6 @@ let seasonFiltersController = new AbortController();
 
 function handleSeasonTeamSelect() {
   const selectedTeam = document.getElementById("season-team-select").value;
-  console.log(selectedTeam);
 
   const events = selectedTeam ? getEventsForTeam(selectedTeam) : Object.values(gameMap).flatMap(game => game.events);
   const shotEvents = events.filter(event => event.typeDescKey === "shot-on-goal");
@@ -280,7 +278,6 @@ function handleSeasonTeamSelect() {
         "name": `${player.firstName} ${player.lastName}`
       }
     }).sort((p1, p2) => p1.name.localeCompare(p2.name))
-    console.log(playerOptions)
     for (const playerOption of playerOptions) {
       const option = document.createElement("option");
       option.value = playerOption.id;
@@ -406,16 +403,17 @@ function plotGameData(goalAndShotEvents) {
 }
 
 function plotSeasonData(events) {
+  const filteredEvents = events.filter(event => event.details.xCoord !== undefined && event.details.yCoord !== undefined)
   d3.select("#season-d3-plot").selectAll("*").remove();
 
-  // TODO: add heatmap color legend!
+  const legendBuffer = 60
 
   const svg = d3.select("#season-d3-plot")
     .append("svg")
     .attr("width", plotWidth + margin.left + margin.right)
-    .attr("height", plotHeight + margin.top + margin.bottom)
+    .attr("height", plotHeight + margin.top + margin.bottom + legendBuffer)
     .append("g")
-    .attr("transform", "translate(" + margin.left + "," + margin.top + ")");
+    .attr("transform", "translate(" + margin.left + "," + (margin.top + legendBuffer) + ")");
 
   svg.append("image")
     .attr("xlink:href", "images/rink.jpeg")
@@ -424,52 +422,112 @@ function plotSeasonData(events) {
     .attr("width", x(100) - x(-100))
     .attr("height", y(-42.5) - y(42.5));
 
-  // compute the density data
+  // Compute the density data
   var densityData = d3.contourDensity()
     .x(event => x(event.details.xCoord))
     .y(event => y(event.details.yCoord))
     .size([plotWidth, plotHeight])
     .bandwidth(4)
-    (events)
+    (filteredEvents)
 
-  const meanDensity = d3.mean(densityData, d => d.value);
-  const stdDevDensity = d3.deviation(densityData, d => d.value);
-  console.log(stdDevDensity / meanDensity);
-  console.log(stdDevDensity);
-
-  const maxDensityValue = meanDensity + 0.5 * stdDevDensity;
-  const minDensityValue = 0.001 * stdDevDensity;
-  console.log(minDensityValue)
+  const sortedDensityData = densityData.map(d => d.value).sort(d3.ascending);
+  const maxDensityValue = d3.quantile(sortedDensityData, 0.95);
+  const minDensityValue = d3.min(densityData, d => d.value);
 
   const colorScale = d3.scaleSequential(d3.interpolatePlasma)
-    .domain([minDensityValue, maxDensityValue]); // Adjust to your actual max density
+    .domain([minDensityValue, maxDensityValue]);
+
+  const opacityScale = d3.scaleLinear()
+    .domain([minDensityValue, maxDensityValue])
+    .range([0.1, 0.5]);
 
   // Function to determine color with transparency based on density
   function getColor(density) {
-    // Get the base color from the color scale
     const color = d3.color(colorScale(density));
-
-    // Set opacity proportional to the density value
-    color.opacity = d3.scaleLinear()
-      .domain([minDensityValue, maxDensityValue])
-      .range([0.1, 0.6])(density);
-
+    color.opacity = opacityScale(density);
     return color;
   }
 
-  // show the shape!
+  // Draw the contours
   svg.insert("g", "g")
     .selectAll("path")
     .data(densityData)
     .enter().append("path")
     .attr("d", d3.geoPath())
-    .attr("fill", function (d) { return getColor(d.value); })
+    .attr("fill", function (d) { return getColor(d.value); });
+
+  const legendRectWidth = 200;
+  const legendRectHeight = 10;
+  const legendLabelHeight = 20;
+
+  // Covert shots per square pixel to shots per square foot
+  const legendMinValue = minDensityValue * 16
+  const legendMaxValue = maxDensityValue * 16
+
+  const legendSvg = svg.append("g")
+    .attr("transform", `translate(${(plotWidth - legendRectWidth) / 2}, -${legendBuffer})`);
+
+  legendSvg.append("text")
+    .attr("x", 0)
+    .attr("transform", `translate(${(legendRectWidth) / 2}, 12)`)
+    .attr("font-size", "14px")
+    .style("text-anchor", "middle")
+    .text(`${filteredEvents[0].typeDescKey === "goal" ? "Goals" : "Shots"} per Square Foot`);
+
+  const gradient = svg.append("defs")
+    .append("linearGradient")
+    .attr("id", "legendGradient")
+    .attr("x1", "0%")
+    .attr("x2", "100%")
+    .attr("y1", "0%")
+    .attr("y2", "0%");
+
+  const legendOpacityScale = d3.scaleLinear()
+    .domain([minDensityValue, maxDensityValue])
+    .range([0.1, 0.9]);
+
+  const legendStops = 40;
+  for (let i = 0; i <= legendStops; i++) {
+    const t = i / legendStops;
+    const densityValue = minDensityValue + t * (maxDensityValue - minDensityValue);
+    const stopColor = colorScale(densityValue);
+    const stopOpacity = legendOpacityScale(densityValue);
+
+    gradient.append("stop")
+      .attr("offset", `${t * 100}%`)
+      .attr("stop-color", stopColor)
+      .attr("stop-opacity", stopOpacity);
+  }
+
+  // Draw the legend color bar
+  legendSvg.append("rect")
+    .attr("transform", `translate(0, ${legendLabelHeight})`)
+    .attr("width", legendRectWidth)
+    .attr("height", legendRectHeight)
+    .style("fill", "url(#legendGradient)");
+
+  // Create a scale for the legend axis
+  const legendScale = d3.scaleLinear()
+    .domain([legendMinValue, legendMaxValue])
+    .range([0, legendRectWidth]);
+
+  const numberOfTicks = 5;
+  const tickValues = d3.range(legendMinValue, legendMaxValue, (legendMaxValue - legendMinValue) / (numberOfTicks - 1)).concat(legendMaxValue);
+
+  // Add the legend axis with specified tick values
+  legendSvg.append("g")
+    .attr("transform", `translate(0, ${legendRectHeight + legendLabelHeight})`)
+    .call(d3.axisBottom(legendScale)
+      .tickValues(tickValues)
+      .tickFormat(d => d === legendMaxValue ? `${parseFloat(d.toFixed(2))}+` : parseFloat(d.toFixed(2))))
+    .call(g => g.selectAll(".tick text")
+      .style("text-anchor", "middle"));
 }
 
-function plotSeasonPlayerData(goalAndShotEvents) {
+function plotSeasonPlayerData(events) {
   // TODO: add shot vs goals filter
 
-
+  const filteredEvents = events.filter(event => event.details.xCoord !== undefined && event.details.yCoord !== undefined)
 
   d3.select("#season-d3-plot").selectAll("*").remove();
 
@@ -490,7 +548,7 @@ function plotSeasonPlayerData(goalAndShotEvents) {
   var tooltip = d3.select("#season-tooltip");
 
   svg.selectAll("circle")
-    .data(goalAndShotEvents.filter(event => event.typeDescKey == "shot-on-goal"))
+    .data(filteredEvents.filter(event => event.typeDescKey == "shot-on-goal"))
     .enter()
     .append("circle")
     .attr("cx", event => x(event.details.xCoord))
@@ -508,7 +566,7 @@ function plotSeasonPlayerData(goalAndShotEvents) {
     })
 
   svg.selectAll("path")
-    .data(goalAndShotEvents.filter(event => event.typeDescKey == "goal"))
+    .data(filteredEvents.filter(event => event.typeDescKey == "goal"))
     .enter()
     .append("path")
     .attr("d", d3.symbol().type(d3.symbolCross).size(80))
